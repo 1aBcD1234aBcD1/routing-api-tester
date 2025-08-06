@@ -4,36 +4,29 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"time"
 )
 
 func GetHttpTransportConfig() *http.Client {
-	return &http.Client{Transport: &http.Transport{}, Timeout: 25 * time.Second}
+	transport := &http.Transport{
+		IdleConnTimeout:   50 * time.Second,
+		DisableKeepAlives: false,
+	}
+	// Enable HTTP/2
+	return &http.Client{
+		Transport: transport,
+		Timeout:   25 * time.Second,
+	}
 }
-func GetHttpsTransportConfig(clientCertFile, clientKeyFile, caCertFile string) *http.Client {
-	cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
-	if err != nil {
-		panic(err)
-	}
-
-	caCert, err := ioutil.ReadFile(caCertFile)
-	if err != nil {
-		panic(err)
-	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-
+func GetHttpsTransportConfig() *http.Client {
 	t := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
-			Certificates:       []tls.Certificate{cert},
-			RootCAs:            caCertPool,
 		},
+		ForceAttemptHTTP2: true,
 	}
 	return &http.Client{Transport: t, Timeout: 25 * time.Second}
 }
@@ -46,17 +39,18 @@ type APIClient struct {
 func NewAPIClient(endpoint string, withCerts bool) *APIClient {
 	var httpClient *http.Client
 	if withCerts {
-		httpClient = GetHttpsTransportConfig("certs/client.crt", "certs/client.key", "certs/based.crt")
+		httpClient = GetHttpsTransportConfig()
 	} else {
 		httpClient = GetHttpTransportConfig()
 	}
+
 	return &APIClient{
 		httpClient: httpClient,
 		basePath:   endpoint,
 	}
 }
 
-func (c *APIClient) GetSimpleQuote(ctx context.Context, req RequestConfig) (QuoteResponse, error) {
+func (c *APIClient) GetSimpleQuote(ctx context.Context, req QuoteRequest) (QuoteResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return QuoteResponse{}, err
@@ -79,6 +73,33 @@ func (c *APIClient) GetSimpleQuote(ctx context.Context, req RequestConfig) (Quot
 	}
 
 	var quote QuoteResponse
+	err = json.NewDecoder(resp.Body).Decode(&quote)
+	return quote, err
+}
+
+func (c *APIClient) GetTokenPrice(ctx context.Context, req PriceRequest) (PriceResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return PriceResponse{}, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.basePath+"/getTokenPrice", bytes.NewBuffer(body))
+	if err != nil {
+		return PriceResponse{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return PriceResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return PriceResponse{}, fmt.Errorf("status: %d", resp.StatusCode)
+	}
+
+	var quote PriceResponse
 	err = json.NewDecoder(resp.Body).Decode(&quote)
 	return quote, err
 }
