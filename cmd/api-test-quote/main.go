@@ -15,23 +15,19 @@ func main() {
 	amountInStr := flag.String("amountIn", "", "Amount in (wei)")
 	tokenInStr := flag.String("tokenIn", "", "Token in address")
 	tokenOutStr := flag.String("tokenOut", "", "Token out address")
-	slippageStr := flag.String("slippage", "0.5", "Slippage (float)")
 	maxHops := flag.Int("maxHops", 3, "Max hops")
 	maxPaths := flag.Int("maxPaths", 5, "Max paths")
 	endpoint := flag.String("endpoint", "localhost", "API Endpoint")
-	withCerts := flag.Bool("withCerts", false, "Certs usage")
+	withCerts := flag.Bool("withCerts", true, "Certs usage")
 	flag.Parse()
 
 	amountIn := new(big.Int)
 	amountIn.SetString(*amountInStr, 10)
 
-	slippage, _, _ := big.ParseFloat(*slippageStr, 10, 0, big.ToNearestEven)
-
-	req := client.RequestConfig{
+	req := client.QuoteRequest{
 		AmountIn: amountIn,
 		TokenIn:  common.HexToAddress(*tokenInStr),
 		TokenOut: common.HexToAddress(*tokenOutStr),
-		Slippage: slippage,
 		MaxHops:  *maxHops,
 		MaxPaths: *maxPaths,
 	}
@@ -44,5 +40,6 @@ func main() {
 	}
 
 	jsonOut, _ := json.MarshalIndent(resp, "", "  ")
+
 	fmt.Println(string(jsonOut))
 }
